@@ -1,17 +1,22 @@
 use macroquad::prelude::*;
 
-const SIDE: usize = 3;
+const WIDTH: usize = 3;
+const HEIGHT: usize = 3;
 const WINDOW_TITLE: &str = "Tic Tac Toe";
 const WINDOW_SIZE: i32 = 600;
-const TILE_SIZE: i32 = WINDOW_SIZE / SIDE as i32;
+const TILE_WIDTH: f32 = (WINDOW_SIZE / WIDTH as i32) as f32;
+const TILE_HEIGHT: f32 = (WINDOW_SIZE / HEIGHT as i32) as f32;
+const TILE_MARGIN: f32 = 2.0;
+const TILE_COLOR: Color = RED;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Shape {
     E,  // empty
     O,  // Computer
     X,  // Player
 }
 
+#[derive(Debug)]
 enum DiagonalType {
     Left,
     Right,
@@ -51,59 +56,88 @@ impl Tile {
         draw_rectangle(self.x, self.y, self.w, self.h, self.color);
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, player: &Shape, moves_count: &mut usize) {
         let (x, y) = mouse_position();
-        if x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h {
-            self.color.a = 200.0;
+        if x >= self.x + 0.1 && x <= self.x + self.w - 0.1 && y >= self.y + 0.1 && y <= self.y + self.h - 0.1 {
+            self.color.a = 0.9;
+
             if is_mouse_button_pressed(MouseButton::Left) {
-                self.on_clicked();
+                self.shape = *player;
+                *moves_count += 1;
+                self.color = match player {
+                    Shape::O => YELLOW,
+                    Shape::X => BLUE,
+                    _ => TILE_COLOR,
+                };
             }
         } else {
-            self.color.a = 256.0;
-        }
-    }
-
-    fn on_clicked(&mut self) {
-
-    }
-}
-
-fn draw_board(board: &[[Shape; SIDE];SIDE]) {
-    for (y, row) in board.iter().enumerate() {
-        for (x, col) in row.iter().enumerate() {
-            let pos_x = (x as f32 * TILE_SIZE) + 1.0;
-            let pos_y = (y as f32 * TILE_SIZE) + 1.0;
-
-            let color = match col {
-                Shape::E => RED,
-                Shape::O => YELLOW,
-                Shape::X => SKYBLUE,
-            };
-
-            draw_rectangle(pos_x, pos_y, TILE_SIZE - 2.0, TILE_SIZE - 2.0, color);
+            self.color.a = 1.0;
         }
     }
 }
 
-fn check_cross(board: &[[Shape; SIDE];SIDE]) -> (CrossType, Shape) {
-    for y in 0..board.len() {
-        if board[y][0] != Shape::E && board[y][0] == board[y][1] && board[y][1] == board[y][2] {
-            return (CrossType::Row(y), board[y][0]);
+fn create_board(width: usize, height: usize) -> Vec<Tile> {
+    let mut board: Vec<Tile> = Vec::with_capacity(height * width);
+
+    for y in 0..height {
+        for x in 0..width {
+            board.push(Tile::new(
+                x as f32, y as f32,
+                TILE_WIDTH, TILE_HEIGHT,
+                TILE_MARGIN,
+                TILE_COLOR));
         }
     }
 
-    for x in 0..board.len() {
-        if board[0][x] != Shape::E && board[0][x] == board[1][x] && board[1][x] == board[2][x] {
-            return (CrossType::Column(x), board[0][x]);
+    board
+}
+
+fn draw_board(board: &Vec<Tile>) {
+    for tile in board {
+        tile.draw();
+    }
+}
+
+fn update_board(board: &mut Vec<Tile>, player: &Shape, moves_count: &mut usize) {
+    for tile in board {
+        if tile.shape == Shape::E {
+            tile.update(player, moves_count);
+        }
+    }
+}
+
+fn check_cross(board: &Vec<Tile>, width: usize, height: usize) -> (CrossType, Shape) {
+    // check rows
+    for y in 0..height {
+        let y = y * width;
+        if board[y + 0].shape != Shape::E
+            && board[y + 0].shape == board[y + 1].shape
+            && board[y + 1].shape == board[y + 2].shape {
+            return (CrossType::Row(y), board[y + 0].shape);
         }
     }
 
-    if board[0][0] != Shape::E && board[0][0] == board[1][1] && board[1][1] == board[2][2] {
-        return (CrossType::Diagonal(DiagonalType::Left), board[0][0]);
+    // check columns
+    for x in 0..width {
+        if board[0 * width + x].shape != Shape::E
+            && board[0 * width + x].shape == board[1 * width + x].shape
+            && board[1 * width + x].shape == board[2 * width + x].shape {
+            return (CrossType::Column(x), board[0 * width + x].shape);
+        }
     }
 
-    if board[0][2] != Shape::E && board[0][2] == board[1][1] && board[1][1] == board[2][0] {
-        return (CrossType::Diagonal(DiagonalType::Right), board[0][2]);
+    // check diagonal top-left to bottom-right
+    if board[0 * width + 0].shape != Shape::E
+        && board[0 * width + 0].shape == board[1 * width + 1].shape
+        && board[1 * width + 1].shape == board[2 * width + 2].shape {
+        return (CrossType::Diagonal(DiagonalType::Left), board[0 * width + 0].shape);
+    }
+
+    // check diagonal top-right to bottom-left
+    if board[0 * width + 2].shape != Shape::E
+        && board[0 * width + 2].shape == board[1 * width + 1].shape
+        && board[1 * width + 1].shape == board[2 * width + 0].shape {
+        return (CrossType::Diagonal(DiagonalType::Right), board[0 * width + 2].shape);
     }
 
     (CrossType::None, Shape::E)
@@ -122,35 +156,27 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let mut board: [[Shape; SIDE];SIDE] = [[Shape::E; SIDE]; SIDE];
-    let mut players = [Shape::X, Shape::O];
-    let mut move_count = 0;
-
+    let mut board = create_board(WIDTH, HEIGHT);
+    let players = [Shape::X, Shape::O];
+    let mut moves_count = 0;
+    let mut turn;
+    
     loop {
         // Update
-        if is_mouse_button_pressed(MouseButton::Left) {
-            let (x, y) = mouse_position();
-
-            let x = match x as i32 {
-                1..=199 => 0,
-                200..=399 => 1,
-                400..=600 => 2,
-                _ => 100,
-            };
-            let y = match y as i32 {
-                1..=199 => 0,
-                200..=399 => 1,
-                400..=600 => 2,
-                _ => 100,
-            };
-
-            board[y][x] = if board[y][x] != Shape::E {
-                Shape::E
-            } else {
-                Shape::O
-            };
+        turn = moves_count % players.len();
+        update_board(&mut board, &players[turn], &mut moves_count);
+        match check_cross(&board, WIDTH, HEIGHT) {
+            (CrossType::Row(row), shape) => {
+                println!("Cross on row: {}, Winner: {:?}", row, shape);
+            },
+            (CrossType::Column(column), shape) => {
+                println!("Cross on column: {}, Winner: {:?}", column, shape);
+            },
+            (CrossType::Diagonal(side), shape) => {
+                println!("Cross on diagonal: {:?} side, Winner: {:?}", side, shape);
+            },
+            _ => {},
         }
-
 
         // Render
         clear_background(WHITE);
